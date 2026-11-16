@@ -1,0 +1,36 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - /etc/prometheus/rules/*.yml
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # State of the lake and business metrics, computed from PostgreSQL on scrape.
+  - job_name: costlake-exporter
+    scrape_interval: 30s
+    static_configs:
+      - targets: ["costlake-exporter:9108"]
+
+  # Batch-step telemetry pushed by pipeline runs. honor_labels keeps the pushed
+  # job/step labels instead of overwriting them with the gateway's.
+  - job_name: pushgateway
+    honor_labels: true
+    static_configs:
+      - targets: ["pushgateway:9091"]
+
+  - job_name: seaweedfs
+    static_configs:
+      - targets: ["seaweedfs:9327"]
+
+  - job_name: loki
+    static_configs:
+      - targets: ["loki:3100"]
+
+  - job_name: alloy
+    static_configs:
+      - targets: ["alloy:12345"]

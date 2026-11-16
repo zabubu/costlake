@@ -1,0 +1,26 @@
+name: costlake
+version: "0.1.0"
+config-version: 2
+profile: costlake
+
+model-paths: ["models"]
+test-paths: ["tests"]
+macro-paths: ["macros"]
+target-path: "target"
+clean-targets: ["target", "dbt_packages", "logs"]
+
+vars:
+  # Tag key used to allocate cost to owners; must match quality.allocation_tag.
+  allocation_tag: "team"
+
+models:
+  costlake:
+    staging:
+      +schema: staging
+      +materialized: view
+    marts:
+      +schema: gold
+      +materialized: table
+
+flags:
+  send_anonymous_usage_stats: false

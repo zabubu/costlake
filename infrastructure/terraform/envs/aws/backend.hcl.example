@@ -1,0 +1,6 @@
+# Copy to backend.hcl (git-ignored) and run: terraform init -backend-config=backend.hcl
+bucket       = "my-terraform-state-bucket"
+key          = "costlake/prod.tfstate"
+region       = "eu-west-1"
+encrypt      = true
+use_lockfile = true

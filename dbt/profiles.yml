@@ -1,0 +1,38 @@
+# Connection settings come from the environment, set by costlake.transform.dbt.
+costlake:
+  target: "{{ env_var('COSTLAKE_DBT_TARGET', 'local') }}"
+  outputs:
+    local:
+      type: duckdb
+      path: "{{ env_var('COSTLAKE_WAREHOUSE_PATH', 'target/costlake.duckdb') }}"
+      threads: 4
+      settings:
+        TimeZone: UTC
+    s3:
+      type: duckdb
+      path: "{{ env_var('COSTLAKE_WAREHOUSE_PATH', 'target/costlake.duckdb') }}"
+      threads: 4
+      extensions:
+        - httpfs
+      settings:
+        TimeZone: UTC
+        s3_endpoint: "{{ env_var('COSTLAKE_DUCKDB_S3_ENDPOINT', 's3.amazonaws.com') }}"
+        s3_region: "{{ env_var('COSTLAKE_S3_REGION', 'us-east-1') }}"
+        s3_access_key_id: "{{ env_var('COSTLAKE_S3_ACCESS_KEY_ID', '') }}"
+        s3_secret_access_key: "{{ env_var('COSTLAKE_S3_SECRET_ACCESS_KEY', '') }}"
+        s3_use_ssl: "{{ env_var('COSTLAKE_DUCKDB_S3_USE_SSL', 'true') }}"
+        s3_url_style: "{{ env_var('COSTLAKE_DUCKDB_S3_URL_STYLE', 'vhost') }}"
+    # Real AWS: credentials from the default chain (IAM role, SSO, environment).
+    aws:
+      type: duckdb
+      path: "{{ env_var('COSTLAKE_WAREHOUSE_PATH', 'target/costlake.duckdb') }}"
+      threads: 4
+      extensions:
+        - httpfs
+        - aws
+      settings:
+        TimeZone: UTC
+      secrets:
+        - type: s3
+          provider: credential_chain
+          region: "{{ env_var('COSTLAKE_S3_REGION', 'us-east-1') }}"

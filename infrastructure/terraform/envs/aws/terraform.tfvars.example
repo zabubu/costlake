@@ -1,0 +1,4 @@
+owner               = "finops-team"
+landing_bucket_name = "acme-costlake-landing-prod"
+lake_bucket_name    = "acme-costlake-lake-prod"
+region              = "eu-west-1"

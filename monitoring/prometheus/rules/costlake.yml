@@ -1,0 +1,97 @@
+groups:
+  - name: costlake-platform
+    rules:
+      - alert: CostlakeExporterDown
+        expr: up{job="costlake-exporter"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: costlake exporter is not scraped
+          description: "No lake-state metrics, so freshness and anomaly alerts are blind."
+
+      - alert: CostlakeLedgerUnreachable
+        expr: costlake_exporter_database_up == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: The exporter cannot query the PostgreSQL ledger
+
+      - alert: CostlakePipelineStepFailed
+        expr: costlake_step_last_run_success == 0
+        labels:
+          severity: critical
+        annotations:
+          summary: "Pipeline step {{ $labels.step }} failed on its last run"
+          description: >-
+            Check the run in Dagster (http://127.0.0.1:3000) and the logs in Grafana
+            Explore: {service="costlake-code"} | json | step="{{ $labels.step }}".
+
+      - alert: CostlakeTransformSlow
+        expr: costlake_step_duration_seconds{step="transform"} > 900
+        labels:
+          severity: warning
+        annotations:
+          summary: "dbt build took {{ $value | humanizeDuration }}"
+
+  - name: costlake-data
+    rules:
+      - alert: CostlakeSourceStale
+        expr: time() - costlake_source_last_export_timestamp_seconds > 36 * 3600
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "No new export from {{ $labels.source }} for {{ $value | humanizeDuration }}"
+          description: Providers refresh billing exports at least daily; check the export job and bucket permissions.
+
+      - alert: CostlakeDeliveryQuarantined
+        expr: costlake_deliveries{status="quarantined"} > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $value }} delivery(ies) quarantined by the quality gate"
+          description: >-
+            `costlake deliveries list` shows the reason. Fix the cause, then
+            `costlake deliveries requeue <id>`.
+
+      - alert: CostlakeQualityErrors
+        expr: sum(costlake_quality_check_failures_24h{severity="error"}) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: Blocking data-quality checks failed in the last 24 hours
+
+      - alert: CostlakeTagCoverageLow
+        expr: costlake_tag_coverage_ratio < 0.8
+        for: 1h
+        labels:
+          severity: info
+        annotations:
+          summary: "Only {{ $value | humanizePercentage }} of {{ $labels.provider }} usage cost is allocated to an owner"
+
+  - name: costlake-finops
+    rules:
+      - alert: CostlakeCostAnomalyCritical
+        expr: costlake_cost_anomalies_recent{severity="critical"} > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: "Critical cost {{ $labels.direction }} on {{ $labels.provider }} / {{ $labels.service }}"
+
+      - alert: CostlakeCostAnomaly
+        expr: costlake_cost_anomalies_recent{severity="warning"} > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: "Cost {{ $labels.direction }} on {{ $labels.provider }} / {{ $labels.service }}"
+
+      - alert: CostlakeForecastOverrun
+        expr: >-
+          costlake_forecast_cost / (costlake_previous_period_cost > 0) > 1.2
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.provider }} is on track to spend {{ $value | humanizePercentage }} of last month"

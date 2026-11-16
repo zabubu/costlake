@@ -1,0 +1,12 @@
+**
+!pyproject.toml
+!README.md
+!LICENSE
+!requirements/runtime.lock
+!src/**
+!config/**
+!dbt/**
+!infrastructure/docker/dagster/**
+dbt/target
+dbt/logs
+**/__pycache__
