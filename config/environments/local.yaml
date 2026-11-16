@@ -1,0 +1,33 @@
+# Pipeline tunables for the local Docker Compose stack and the no-Docker quickstart.
+sources:
+  - id: aws-focus
+    format: focus
+    prefix: aws/focus
+    description: AWS Data Exports, FOCUS 1.0 table, Parquet, overwrite mode.
+  - id: azure-focus
+    format: focus
+    prefix: azure/focus
+    description: Azure Cost Management export, FOCUS schema, gzip CSV.
+  - id: gcp-focus
+    format: focus
+    prefix: gcp/focus
+    description: Google Cloud FOCUS view exported from BigQuery, gzip CSV.
+  - id: aws-cur2-legacy
+    format: aws_cur2
+    prefix: aws/cur2
+    description: Acquired AWS organisation still delivering CUR 2.0, gzip CSV.
+
+ingestion:
+  settle_seconds: 30
+
+quality:
+  reconciliation_tolerance: 0.01
+  min_tag_coverage: 0.8
+  allocation_tag: team
+
+anomaly:
+  window_days: 42
+  min_history_days: 14
+  z_threshold: 3.5
+  min_abs_delta: 25
+  min_relative_delta: 0.3

@@ -1,0 +1,36 @@
+# Secrets and local state
+.env
+*.tfstate
+*.tfstate.*
+.terraform/
+infrastructure/terraform/envs/aws/backend.hcl
+infrastructure/terraform/envs/aws/terraform.tfvars
+*.tfplan
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+coverage.xml
+reports/
+
+# Data produced by local runs
+data/
+
+# dbt
+dbt/target/
+dbt/logs/
+dbt/.user.yml
+
+# Editors and OS
+.idea/
+.vscode/
+*.swp
+.DS_Store

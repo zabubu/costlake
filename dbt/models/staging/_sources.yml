@@ -1,0 +1,15 @@
+version: 2
+
+sources:
+  - name: silver
+    description: >
+      FOCUS 1.0 charges written by the costlake normaliser, one Parquet object per
+      (source, billing period). Each object is replaced when the provider restates
+      the period, so reading the whole prefix never double counts.
+    meta:
+      external_location: "read_parquet('{{ env_var('COSTLAKE_SILVER_GLOB', 'missing') }}', union_by_name = true)"
+    tables:
+      - name: focus
+        meta:
+          dagster:
+            asset_key: ["silver_focus"]

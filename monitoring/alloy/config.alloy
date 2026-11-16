@@ -1,0 +1,56 @@
+// Ship the logs of every container of the compose project to Loki.
+// costlake services log JSON: level, event, run_id and step become labels or
+// structured metadata so that a whole pipeline run can be followed in Grafana.
+
+discovery.docker "containers" {
+  host = "unix:///var/run/docker.sock"
+  filter {
+    name   = "label"
+    values = ["com.docker.compose.project=costlake"]
+  }
+}
+
+discovery.relabel "containers" {
+  targets = []
+
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    target_label  = "service"
+  }
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "container"
+  }
+}
+
+loki.source.docker "containers" {
+  host          = "unix:///var/run/docker.sock"
+  targets       = discovery.docker.containers.targets
+  relabel_rules = discovery.relabel.containers.rules
+  forward_to    = [loki.process.costlake.receiver]
+}
+
+loki.process "costlake" {
+  stage.match {
+    selector = "{service=~\"costlake-.*|dagster-.*\"}"
+
+    stage.json {
+      expressions = { level = "level", event = "event", run_id = "run_id", step = "step" }
+    }
+    stage.labels {
+      values = { level = "", step = "" }
+    }
+    stage.structured_metadata {
+      values = { run_id = "", event = "" }
+    }
+  }
+
+  forward_to = [loki.write.local.receiver]
+}
+
+loki.write "local" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}

@@ -1,0 +1,296 @@
+# Local costlake platform. Quick start: `make up` (see README).
+# Every port is bound to 127.0.0.1; secrets come from .env (scripts/init-env.sh).
+
+name: costlake
+
+x-costlake-image: &costlake-image
+  image: costlake:${COSTLAKE_IMAGE_TAG:-local}
+  build:
+    context: .
+  restart: unless-stopped
+  read_only: true
+  tmpfs:
+    - /tmp
+  security_opt:
+    - no-new-privileges:true
+
+x-dagster-env: &dagster-env
+  DAGSTER_PG_HOST: postgres
+  DAGSTER_PG_USER: dagster
+  DAGSTER_PG_PASSWORD: ${DAGSTER_PG_PASSWORD:?run scripts/init-env.sh}
+  DAGSTER_PG_DB: dagster
+
+x-costlake-env: &costlake-env
+  COSTLAKE_ENV: local
+  COSTLAKE_STORAGE_BACKEND: s3
+  COSTLAKE_S3_ENDPOINT_URL: http://seaweedfs:8333
+  COSTLAKE_S3_ACCESS_KEY_ID: ${S3_PIPELINE_ACCESS_KEY:?run scripts/init-env.sh}
+  COSTLAKE_S3_SECRET_ACCESS_KEY: ${S3_PIPELINE_SECRET_KEY:?run scripts/init-env.sh}
+  COSTLAKE_DATABASE_URL: postgresql+psycopg://costlake:${COSTLAKE_PG_PASSWORD:?run scripts/init-env.sh}@postgres:5432/costlake
+  COSTLAKE_SERVING_DATABASE_URL: postgresql+psycopg://costlake:${COSTLAKE_PG_PASSWORD}@postgres:5432/costlake
+  COSTLAKE_WAREHOUSE_PATH: /data/warehouse/costlake.duckdb
+  COSTLAKE_PUSHGATEWAY_URL: http://pushgateway:9091
+  COSTLAKE_LOG_FORMAT: json
+
+services:
+  # ---------------------------------------------------------------- storage
+  seaweedfs:
+    image: chrislusf/seaweedfs:4.54
+    entrypoint: ["/bin/sh", "/opt/costlake/entrypoint.sh"]
+    environment:
+      S3_ADMIN_ACCESS_KEY: ${S3_ADMIN_ACCESS_KEY:?run scripts/init-env.sh}
+      S3_ADMIN_SECRET_KEY: ${S3_ADMIN_SECRET_KEY:?run scripts/init-env.sh}
+      S3_EXPORTER_ACCESS_KEY: ${S3_EXPORTER_ACCESS_KEY:?run scripts/init-env.sh}
+      S3_EXPORTER_SECRET_KEY: ${S3_EXPORTER_SECRET_KEY:?run scripts/init-env.sh}
+      S3_PIPELINE_ACCESS_KEY: ${S3_PIPELINE_ACCESS_KEY}
+      S3_PIPELINE_SECRET_KEY: ${S3_PIPELINE_SECRET_KEY}
+    volumes:
+      - ./infrastructure/docker/seaweedfs/entrypoint.sh:/opt/costlake/entrypoint.sh:ro
+      - seaweedfs-data:/data
+    ports:
+      - "127.0.0.1:8333:8333"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8333/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+
+  postgres:
+    image: postgres:17.12-alpine3.23
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?run scripts/init-env.sh}
+      DAGSTER_PG_PASSWORD: ${DAGSTER_PG_PASSWORD}
+      COSTLAKE_PG_PASSWORD: ${COSTLAKE_PG_PASSWORD}
+      GRAFANA_PG_PASSWORD: ${GRAFANA_PG_PASSWORD:?run scripts/init-env.sh}
+    volumes:
+      - ./infrastructure/docker/postgres/init.sh:/docker-entrypoint-initdb.d/10-init.sh:ro
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d costlake"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+
+  # Infrastructure as code for the local buckets (`make bootstrap`).
+  terraform:
+    image: hashicorp/terraform:1.17.2
+    profiles: ["bootstrap"]
+    working_dir: /workspace/envs/local
+    environment:
+      TF_DATA_DIR: /state/data
+      TF_IN_AUTOMATION: "1"
+      TF_VAR_s3_admin_access_key: ${S3_ADMIN_ACCESS_KEY}
+      TF_VAR_s3_admin_secret_key: ${S3_ADMIN_SECRET_KEY}
+    volumes:
+      - ./infrastructure/terraform:/workspace:ro
+      - terraform-state:/state
+    depends_on:
+      seaweedfs:
+        condition: service_healthy
+
+  # ---------------------------------------------------------------- costlake
+  costlake-code:
+    <<: *costlake-image
+    # Runs execute here (DefaultRunLauncher) and dbt writes its target/ folder.
+    read_only: false
+    command: ["dagster", "code-server", "start", "-h", "0.0.0.0", "-p", "4000", "-m", "costlake.orchestration.definitions"]
+    environment:
+      <<: [*dagster-env, *costlake-env]
+    volumes:
+      - warehouse-data:/data
+    healthcheck:
+      test: ["CMD", "dagster", "api", "grpc-health-check", "-p", "4000"]
+      interval: 10s
+      timeout: 10s
+      retries: 18
+      start_period: 20s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      seaweedfs:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+
+  dagster-webserver:
+    <<: *costlake-image
+    command: ["dagster-webserver", "-h", "0.0.0.0", "-p", "3000", "-w", "/opt/dagster/home/workspace.yaml"]
+    environment:
+      <<: *dagster-env
+    ports:
+      - "127.0.0.1:3000:3000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:3000/server_info', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 20s
+    depends_on:
+      costlake-code:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+
+  dagster-daemon:
+    <<: *costlake-image
+    command: ["dagster-daemon", "run", "-w", "/opt/dagster/home/workspace.yaml"]
+    environment:
+      <<: *dagster-env
+    depends_on:
+      costlake-code:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+
+  costlake-exporter:
+    <<: *costlake-image
+    command: ["costlake", "exporter", "--port", "9108"]
+    environment:
+      <<: *costlake-env
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9108/metrics', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+    depends_on:
+      postgres:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+
+  # Demo data producer: writes synthetic exports with the *exporter* identity,
+  # exactly where a cloud provider would (`make demo-data`).
+  generator:
+    <<: *costlake-image
+    profiles: ["tools"]
+    restart: "no"
+    command: ["costlake", "generate"]
+    environment:
+      COSTLAKE_ENV: local
+      COSTLAKE_STORAGE_BACKEND: s3
+      COSTLAKE_S3_ENDPOINT_URL: http://seaweedfs:8333
+      COSTLAKE_S3_ACCESS_KEY_ID: ${S3_EXPORTER_ACCESS_KEY}
+      COSTLAKE_S3_SECRET_ACCESS_KEY: ${S3_EXPORTER_SECRET_KEY}
+      COSTLAKE_LOG_FORMAT: json
+    depends_on:
+      seaweedfs:
+        condition: service_healthy
+
+  # ---------------------------------------------------------------- observability
+  pushgateway:
+    image: prom/pushgateway:v1.11.5
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 128m
+
+  prometheus:
+    image: prom/prometheus:v3.16.0
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+      - --web.enable-lifecycle
+    volumes:
+      - ./monitoring/prometheus:/etc/prometheus:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "127.0.0.1:9090:9090"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9090/-/ready"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+
+  loki:
+    image: grafana/loki:3.7.10
+    command: ["-config.file=/etc/loki/loki.yml"]
+    volumes:
+      - ./monitoring/loki/loki.yml:/etc/loki/loki.yml:ro
+      - loki-data:/loki
+    # Distroless image (no shell): readiness is monitored by Prometheus (up{job="loki"}).
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+
+  alloy:
+    image: grafana/alloy:v1.22.0
+    command: ["run", "--server.http.listen-addr=0.0.0.0:12345", "--storage.path=/var/lib/alloy/data", "/etc/alloy/config.alloy"]
+    volumes:
+      - ./monitoring/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      # Read-only socket access to discover containers and read their logs.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      loki:
+        condition: service_started
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+
+  grafana:
+    image: grafana/grafana:13.1.10
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?run scripts/init-env.sh}
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/finops-overview.json
+      GRAFANA_PG_PASSWORD: ${GRAFANA_PG_PASSWORD}
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "127.0.0.1:3001:3000"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/api/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 20
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+
+volumes:
+  seaweedfs-data:
+  postgres-data:
+  warehouse-data:
+  terraform-state:
+  prometheus-data:
+  loki-data:
+  grafana-data:

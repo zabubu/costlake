@@ -1,0 +1,17 @@
+version: 2
+
+models:
+  - name: stg_focus__charges
+    description: Silver FOCUS charges with snake_case names and extracted tags.
+    columns:
+      - name: provider
+        tests: [not_null]
+      - name: charge_date
+        tests: [not_null]
+      - name: charge_category
+        tests:
+          - not_null
+          - accepted_values:
+              values: ["Usage", "Purchase", "Tax", "Credit", "Adjustment"]
+      - name: currency
+        tests: [not_null]

@@ -1,0 +1,376 @@
+{
+  "uid": "costlake-finops",
+  "title": "FinOps overview",
+  "description": "Cloud spend from the costlake serving layer.",
+  "tags": [
+    "costlake",
+    "finops"
+  ],
+  "timezone": "utc",
+  "schemaVersion": 41,
+  "version": 1,
+  "editable": false,
+  "refresh": "1m",
+  "time": {
+    "from": "now-120d",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Month-to-date cost",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "costlake-pg"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "costlake-pg"
+          },
+          "rawQuery": true,
+          "editorMode": "code",
+          "format": "table",
+          "rawSql": "select provider, mtd_cost from serving.mart_month_to_date order by provider"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 8,
+        "h": 5
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": true
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value_and_name"
+      },
+      "description": "Effective (amortised) cost of the current billing period, per provider."
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Forecast for the period",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "costlake-pg"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "costlake-pg"
+          },
+          "rawQuery": true,
+          "editorMode": "code",
+          "format": "table",
+          "rawSql": "select provider, forecast_cost from serving.mart_month_to_date order by provider"
+        }
+      ],
+      "gridPos": {
+        "x": 8,
+        "y": 0,
+        "w": 8,
+        "h": 5
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": true
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value_and_name"
+      },
+      "description": "Linear run-rate: month-to-date cost / days elapsed * days in period."
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Forecast vs previous period",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "costlake-pg"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "costlake-pg"
+          },
+          "rawQuery": true,
+          "editorMode": "code",
+          "format": "table",
+          "rawSql": "select provider, forecast_vs_previous from serving.mart_month_to_date order by provider"
+        }
+      ],
+      "gridPos": {
+        "x": 16,
+        "y": 0,
+        "w": 8,
+        "h": 5
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.1
+              },
+              {
+                "color": "red",
+                "value": 0.2
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": true
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value_and_name"
+      }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Daily effective cost by provider",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "costlake-pg"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "costlake-pg"
+          },
+          "rawQuery": true,
+          "editorMode": "code",
+          "format": "time_series",
+          "rawSql": "select charge_date::timestamp as time, provider as metric, sum(effective_cost) as value from serving.fct_daily_cost where $__timeFilter(charge_date::timestamp) group by 1, 2 order by 1"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 16,
+        "h": 9
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "custom": {
+            "stacking": {
+              "mode": "normal"
+            },
+            "fillOpacity": 30
+          }
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 5,
+      "type": "barchart",
+      "title": "Showback: latest period by owner",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "costlake-pg"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "costlake-pg"
+          },
+          "rawQuery": true,
+          "editorMode": "code",
+          "format": "table",
+          "rawSql": "select owner, round(sum(effective_cost)::numeric, 2) as cost from serving.mart_owner_monthly_cost where billing_period = (select max(billing_period) from serving.mart_owner_monthly_cost) group by owner order by cost desc"
+        }
+      ],
+      "gridPos": {
+        "x": 16,
+        "y": 5,
+        "w": 8,
+        "h": 9
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD"
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "xField": "owner",
+        "showValue": "auto"
+      },
+      "description": "Cost allocated with the owner tag; 'unallocated' is untagged spend."
+    },
+    {
+      "id": 6,
+      "type": "table",
+      "title": "Cost anomalies",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "costlake-pg"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "costlake-pg"
+          },
+          "rawQuery": true,
+          "editorMode": "code",
+          "format": "table",
+          "rawSql": "select charge_date, provider, service_name, direction, severity, actual_cost, expected_cost, delta, z_score from serving.cost_anomalies order by charge_date desc, abs(z_score) desc limit 100"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 14,
+        "w": 24,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [
+          {
+            "displayName": "charge_date",
+            "desc": true
+          }
+        ]
+      },
+      "description": "Robust z-score on daily cost per provider and service (weekday-adjusted median/MAD baseline)."
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Allocation tag coverage",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "costlake-pg"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "costlake-pg"
+          },
+          "rawQuery": true,
+          "editorMode": "code",
+          "format": "time_series",
+          "rawSql": "select charge_date::timestamp as time, provider as metric, coverage_ratio as value from serving.mart_tag_coverage_daily where $__timeFilter(charge_date::timestamp) order by 1"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 22,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 8,
+      "type": "table",
+      "title": "Commitment savings by month",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "costlake-pg"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "costlake-pg"
+          },
+          "rawQuery": true,
+          "editorMode": "code",
+          "format": "table",
+          "rawSql": "select billing_period, provider, list_cost, effective_cost, savings, savings_rate, commitment_coverage from serving.mart_commitment_savings_monthly order by billing_period desc, provider"
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "y": 22,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {}
+    }
+  ],
+  "templating": {
+    "list": []
+  },
+  "annotations": {
+    "list": []
+  }
+}

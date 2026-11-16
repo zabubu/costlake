@@ -1,0 +1,15 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: monthly }
+  - package-ecosystem: docker
+    directories: ["/"]
+    schedule: { interval: monthly }
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule: { interval: monthly }
+  - package-ecosystem: terraform
+    directories: ["/infrastructure/terraform/envs/*"]
+    schedule: { interval: monthly }
+  # Python dependencies are hash-locked: refresh with `make lock` and review the diff.

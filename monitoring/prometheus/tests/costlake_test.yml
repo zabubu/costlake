@@ -1,0 +1,52 @@
+# promtool test rules monitoring/prometheus/tests/costlake_test.yml
+rule_files:
+  - ../rules/costlake.yml
+
+evaluation_interval: 1m
+
+tests:
+  - interval: 1m
+    input_series:
+      - series: 'costlake_step_last_run_success{step="transform"}'
+        values: "1 1 0 0"
+      - series: 'costlake_source_last_export_timestamp_seconds{source="aws-focus"}'
+        values: "0x40"
+      - series: 'costlake_forecast_cost{provider="AWS",currency="USD"}'
+        values: "1300x70"
+      - series: 'costlake_previous_period_cost{provider="AWS",currency="USD"}'
+        values: "1000x70"
+      - series: 'costlake_forecast_cost{provider="Microsoft",currency="USD"}'
+        values: "900x70"
+      - series: 'costlake_previous_period_cost{provider="Microsoft",currency="USD"}'
+        values: "0x70"
+      - series: 'costlake_deliveries{status="quarantined"}'
+        values: "0 0 2"
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: CostlakePipelineStepFailed
+        exp_alerts: []
+      - eval_time: 3m
+        alertname: CostlakePipelineStepFailed
+        exp_alerts:
+          - exp_labels: { severity: critical, step: transform }
+            exp_annotations:
+              summary: Pipeline step transform failed on its last run
+              description: >-
+                Check the run in Dagster (http://127.0.0.1:3000) and the logs in Grafana
+                Explore: {service="costlake-code"} | json | step="transform".
+      - eval_time: 2m
+        alertname: CostlakeDeliveryQuarantined
+        exp_alerts:
+          - exp_labels: { severity: warning, status: quarantined }
+            exp_annotations:
+              summary: 2 delivery(ies) quarantined by the quality gate
+              description: >-
+                `costlake deliveries list` shows the reason. Fix the cause, then
+                `costlake deliveries requeue <id>`.
+      # Only AWS: Microsoft has no previous period, so the ratio is undefined.
+      - eval_time: 70m
+        alertname: CostlakeForecastOverrun
+        exp_alerts:
+          - exp_labels: { severity: warning, provider: AWS, currency: USD }
+            exp_annotations:
+              summary: AWS is on track to spend 130% of last month

@@ -1,0 +1,59 @@
+version: 2
+
+models:
+  - name: fct_daily_cost
+    description: Daily billed, effective and list cost by account, service, owner and charge category.
+    tests:
+      - unique_combination_of_columns:
+          columns: [charge_date, provider, billing_account_id, sub_account_id, service_category,
+                    service_name, charge_category, owner, environment, currency]
+    columns:
+      - name: charge_date
+        tests: [not_null]
+      - name: provider
+        tests: [not_null]
+      - name: owner
+        description: Value of the allocation tag, or 'unallocated'.
+        tests: [not_null]
+      - name: effective_cost
+        description: Amortised cost (commitment purchases spread over the usage they cover).
+        tests: [not_null]
+
+  - name: agg_daily_service_cost
+    description: Gap-filled daily usage cost per provider and service; input of anomaly detection.
+    tests:
+      - unique_combination_of_columns:
+          columns: [charge_date, provider, service_name]
+    columns:
+      - name: effective_cost
+        tests: [not_null]
+
+  - name: mart_owner_monthly_cost
+    description: Monthly showback per owner.
+    tests:
+      - unique_combination_of_columns:
+          columns: [billing_period, provider, owner, currency]
+
+  - name: mart_tag_coverage_daily
+    description: Share of usage cost carrying the allocation tag.
+    columns:
+      - name: coverage_ratio
+        tests:
+          - value_between:
+              min_value: 0
+              max_value: 1
+
+  - name: mart_commitment_savings_monthly
+    description: Savings delivered by commitment discounts.
+    columns:
+      - name: savings_rate
+        tests:
+          - value_between:
+              min_value: -1
+              max_value: 1
+
+  - name: mart_month_to_date
+    description: Month-to-date cost and run-rate forecast per provider.
+    tests:
+      - unique_combination_of_columns:
+          columns: [provider]
